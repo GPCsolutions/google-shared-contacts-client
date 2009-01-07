@@ -1,0 +1,4 @@
+Action,ID,Name,E-mail Address,Notes,E-mail 2 Address,E-mail 3 Address,Mobile Phone,Pager,Company,Job Title,Home Phone,Home Phone 2,Home Fax,Home Address,Business Phone,Business Phone 2,Business Fax,Business Address,Other Phone,Other Fax,Other Address
+add,,Adam Glacius,adam.glacius@anycom.com,Has 2 kids,adam.g@example.com,ag@glacius.com,+1 555 3227 8544,+1 555 3227 8543,Acme Inc.,Sales Planner,+1 555 3227 8545,+1 555 3227 8546,+1 555 3227 8546,"999 Super Way, Super, CA, 94043",+1 555 3227 8547,+1 555 3227 8548,+1 555 3227 8549,8999 Corporate Way,,,
+delete,241a444f0b330b22,Daniel Ireland,danielireland@restty.com,,,,+1 555 3227 8543,,,Receptionist
+update,527fbda08922b018,Duncan Amey,duncanamey@dreamt.com,,,,+1 555 3227 8543,,,Supervisor

@@ -163,10 +163,11 @@ class ContactsManager(object):
       email = 'admin@domain.com',
       password = '********',
       account_type = 'HOSTED',
+      contact_list = 'domain.com',
       source = 'shared_contacts',
     )
   contacts_service.ProgrammaticLogin()
-  contacts_manager = ContactsManager(contacts_service, 'domain.com')
+  contacts_manager = ContactsManager(contacts_service)
   contacts_manager.DeleteAllContacts()
   contacts_manager.ImportMsOutlookCsv(open('input.csv', 'rt'),
                                       open('output.csv', 'wb'))
@@ -174,34 +175,30 @@ class ContactsManager(object):
                                       open('outlook.csv', 'wb'))
   """
 
-  def __init__(self, contacts_service, contact_name):
+  def __init__(self, contacts_service):
     """Creates a contact manager for the contact list of a domain or user.
 
     Args:
       contacts_service: The gdata.contacts.service.ContactsService instance to
         use to perform GData calls. Authentication should have been performed,
         typically by calling contacts_service.ProgrammaticLogin()
-      contact_name: The name of the contact list to access. Can be:
-        - an email address: the user must be logged-in under this identity
-        - a domain name: the logged-in user must then be an admin of this domain
-        - 'default': accesses the contact list of the logged-in user
     """
     self.contacts_service = contacts_service
-    self.contact_name = contact_name
-    self.uri = 'http://%s/m8/feeds/contacts/%s' % (
-        contacts_service.server, contact_name)
 
   def GetContactUrl(self, contact_short_id):
     """Retrieves the GData read-only URL of a contact from its short ID.
 
     Uses the /base projection.
     """
-    return 'http://%s/m8/feeds/contacts/%s/base/%s' % (
-        self.contacts_service.server, self.contact_name, contact_short_id)
+    return self.contacts_service.GetFeedUri(
+        scheme='http', projection='base/%s' % contact_short_id)
 
   def GetContactsFeedUrl(self):
     """Retrieves the feed URL of the first READ_CHUNK_SIZE contacts."""
-    return '%s/full?max-results=%d' % (self.uri, READ_CHUNK_SIZE)
+    feed_uri = self.contacts_service.GetFeedUri()
+    query = gdata.contacts.service.ContactsQuery(feed_uri)
+    query.max_results = READ_CHUNK_SIZE
+    return query.ToUri()
 
   def GetAllContacts(self):
     """Retrieves all contacts in the contact list.
@@ -414,8 +411,8 @@ class ContactsManager(object):
       A dictionary mapping result batch indices (as integers) to the matching
       BatchResult objects.
     """
-    result_feed = self.contacts_service.ExecuteBatch(
-        batch_feed, '%s/base/batch' % self.uri)
+    batch_uri = self.contacts_service.GetFeedUri(projection='base/batch')
+    result_feed = self.contacts_service.ExecuteBatch(batch_feed, batch_uri)
     results = map(self.BatchResult, result_feed.entry)
     results_by_index = dict((result.batch_index, result) for result in results)
     return results_by_index
@@ -444,11 +441,12 @@ class ContactsManager(object):
     """Empties the contact list. Asks for confirmation first."""
     confirmation = raw_input(
         'Do you really want to delete all contact(s) of %s? [y/N] ' %
-            self.contact_name)
+            self.contacts_service.contact_list)
     if confirmation.lower() != 'y':
       return False
 
     feed_url = self.GetContactsFeedUrl()
+    batch_uri = self.contacts_service.GetFeedUri(projection='full/batch')
     deleted_total = 0
     Log('### Deleting all contacts...')
     while True:
@@ -466,8 +464,7 @@ class ContactsManager(object):
         delete_feed = gdata.contacts.ContactsFeed()
         for contact_entry in chunk:
           delete_feed.AddDelete(contact_entry.GetEditLink().href)
-        results = self.contacts_service.ExecuteBatch(
-            delete_feed, '%s/full/batch' % self.uri)
+        results = self.contacts_service.ExecuteBatch(delete_feed, batch_uri)
         for result in map(self.BatchResult, results.entry):
           if result.is_success:
             deleted_total += 1
@@ -764,13 +761,14 @@ parameters in the command line."""
 
   # Construct the service and authenticate
   contacts_service = gdata.contacts.service.ContactsService(
-      email=admin_email,
-      password=admin_password,
-      source='shared_contacts',
+      email = admin_email,
+      password = admin_password,
+      account_type = 'HOSTED',
+      contact_list = domain,
+      source = 'shared_contacts',
     )
-  contacts_service.account_type = 'HOSTED'
   contacts_service.ProgrammaticLogin()
-  contacts_manager = ContactsManager(contacts_service, domain)
+  contacts_manager = ContactsManager(contacts_service)
 
   if clear:
     if dry_run:

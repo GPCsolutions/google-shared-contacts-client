@@ -672,24 +672,32 @@ class OutlookSerializer(object):
 
 
 def main():
-  usage = ('shared_contacts.py --admin=EMAIL [--import=FILE [--output=FILE]] '
-      '[--export=FILE]')
+  usage = """\
+shared_contacts.py --admin=EMAIL [--clear] [--import=FILE [--output=FILE]]
+  [--export=FILE]
+If you specify several commands at the same time, they are executed in in the
+following order: --clear, --import, --export regardless of the order of the
+parameters in the command line."""
   parser = optparse.OptionParser(usage=usage)
   parser.add_option('-a', '--admin', default='', metavar='EMAIL',
-      help="Email address of an admin of the domain")
+      help="email address of an admin of the domain")
   parser.add_option('-p', '--password', default=None, metavar='PASSWORD',
-      help="Password of the --admin account")
+      help="password of the --admin account")
   parser.add_option('-i', '--import', default=None, metavar='FILE',
-      dest='import_csv', help="Imports an MS Outlook CSV file")
+      dest='import_csv', help="imports an MS Outlook CSV file, before export "
+          "if --export is specified, after clearing if --clear is specified")
   parser.add_option('-o', '--output', default=None, metavar='FILE',
-      dest='output_csv', help="Output file for --import")
+      dest='output_csv', help="output file for --import; will contain the "
+          "added and updated contacts in the same format as --export")
   parser.add_option('--dry_run', action='store_true',
-      help="Does not authenticate and import contacts for real")
+      help="does not authenticate and import contacts for real")
   parser.add_option('-e', '--export', default=None, metavar='FILE',
-      dest='export_csv', help="Exports all shared contacts of the domain as " +
-          "CSV, after import took place if --import is specified.")
+      dest='export_csv', help="exports all shared contacts of the domain as "
+          "CSV, after clearing or import took place if --clear or --import is "
+          "specified")
   parser.add_option('--clear', action='store_true',
-      help="Deletes all contacts; executed before --import and --export")
+      help="deletes all contacts; executed before --import and --export "
+           "if any of these flags is specified too")
   (options, args) = parser.parse_args()
   if args:
     parser.print_help()

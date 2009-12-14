@@ -32,6 +32,8 @@ BATCH_CHUNK_SIZE = 100
 # Number of contacts to retrieve at once in ContactsManager.GetAllContacts()
 READ_CHUNK_SIZE = 1000
 
+GDATA_VER_HEADER = 'GData-Version'
+
 # Supported actions, for the "Action" CSV column, in lowercase.
 ACTION_ADD = 'add'
 ACTION_UPDATE = 'update'
@@ -766,6 +768,7 @@ parameters in the command line."""
       account_type = 'HOSTED',
       contact_list = domain,
       source = 'shared_contacts',
+      additional_headers = {GDATA_VER_HEADER: 1}
     )
   contacts_service.ProgrammaticLogin()
   contacts_manager = ContactsManager(contacts_service)

@@ -189,10 +189,10 @@ class ContactsManager(object):
   def GetContactUrl(self, contact_short_id):
     """Retrieves the GData read-only URL of a contact from its short ID.
 
-    Uses the /base projection.
+    Uses the /full projection.
     """
     return self.contacts_client.GetFeedUri(
-        contact_list=self.domain, scheme='http', projection='base/%s' % contact_short_id)
+        contact_list=self.domain, scheme='http', projection='full/%s' % contact_short_id)
     
   def GetAllContacts(self):
     """Retrieves all contacts in the contact list.
@@ -200,7 +200,7 @@ class ContactsManager(object):
     Yields:
       gdata.contacts.data.ContactEntry objects.
     """
-    feed_url = self.contacts_client.GetFeedUri(contact_list=self.domain)
+    feed_url = self.contacts_client.GetFeedUri(contact_list=self.domain, projection='full')
     total_read = 0
     while True:
       Log('Retrieving contacts... (%d retrieved so far)' % total_read)      
@@ -219,11 +219,11 @@ class ContactsManager(object):
   def GetProfileUrl(self, profile_short_id):
     """Retrieves the GData read-only URL of a profile from its short ID.
 
-    Uses the /base projection.
+    Uses the /full projection.
     """      
     return self.contacts_client.GetFeedUri(
         kind='profiles', contact_list=self.domain,
-        scheme='http', projection='base/%s' % profile_short_id)  
+        scheme='http', projection='full/%s' % profile_short_id)  
 
   def GetAllProfiles(self):
     """Retrieves all profiles in the domain.
@@ -232,12 +232,13 @@ class ContactsManager(object):
       gdata.contacts.data.ProfileEntry objects.
     """
     feed_url = self.contacts_client.GetFeedUri(kind='profiles',
-                                               contact_list=self.domain)
+                                               contact_list=self.domain,
+                                               projection='full')
     total_read = 0
     while True:
       Log('Retrieving profiles... (%d retrieved so far)' % total_read)
       feed = self.contacts_client.get_feed(feed_url, auth_token=None,
-                                            desired_class=gdata.contacts.data.ProfilesFeed)
+                                           desired_class=gdata.contacts.data.ProfilesFeed)
       total_read += len(feed.entry)
       for entry in feed.entry:
         yield entry
@@ -246,6 +247,14 @@ class ContactsManager(object):
         Log('All profiles retrieved: %d total' % total_read)
         break
       feed_url = next_link.href
+      
+  def GetProfile(self,profile_short_id):
+    """Gets a single profile from its short ID.
+
+    Uses the /full projection.
+    """        
+    uri = self.GetProfileUrl(profile_short_id)      
+    return self.contacts_client.Get(uri, desired_class=gdata.contacts.data.ProfileEntry)
 
   def ImportMsOutlookCsv(self, input_csv_file, output_csv_file, dry_run=False):
     """Imports an MS Outlook contacts/profiles CSV file into the contact list.
@@ -283,24 +292,43 @@ class ContactsManager(object):
         field and entry the contact GData entry built from the CSV line.
       """
       action = fields.get('Action', DEFAULT_ACTION).lower()
-      contact_id = fields.get('ID')
+      contact_id = fields.get('ID')      
       contact_entry = outlook_serializer.FieldsToContactEntry(fields)
 
       if action not in ACTIONS:
         PrintContact(index, contact_entry, contact_id,
             ' (Invalid action: %s - ignoring the entry)' % action)
         ignored[0] += 1
-        return None
+        return Nonelaaklal
+      
       if action == ACTION_ADD and contact_id:
         PrintContact(index, contact_entry, contact_id,
             ' (A contact to be added should not have an ID or Profiles cannot be added - ignoring the entry)')
         ignored[0] += 1
         return None
+      
       if action == ACTION_ADD and not contact_id:
+        # if email address is in the domain the Contact could be a Profile
         for email in contact_entry.email:
-          # if email address is in the domain the Contact could be a Profile
-          if email.address.endswith(self.domain):
-            print '[WARNING] Contact(%s) %s could be a domain User, use UPDATE if that is the case.' % (index+1, email.address)        
+          domain_str_index = email.address.find("@"+self.domain)          
+          if domain_str_index > 0:
+            # Email is part of the domain: a user or a group
+            profile_short_id = email.address[:domain_str_index]
+            tempProfileEntry = None
+            try:
+              # Testing if it is a Profile
+              tempProfileEntry = self.GetProfile(profile_short_id)
+            except gdata.client.RequestError, detail:
+              # Skipping any errors and use Shared Contacts instead.
+              pass
+            # Checking if the Profiles API should be use for domain users            
+            if tempProfileEntry:
+               # Changing Shared Contact to a Profile Update Action
+               contact_id = profile_short_id
+               action = ACTION_UPDATE
+               PrintContact(index, contact_entry, contact_id, ' [update] (using Profiles)')
+               return (index, action, contact_id, contact_entry)
+            
       if action in (ACTION_UPDATE, ACTION_DELETE) and not contact_id:
         PrintContact(index, contact_entry, contact_id, ' A contact to be '
             ' (update or delete must have an ID - ignoring the entry)')
@@ -359,7 +387,7 @@ class ContactsManager(object):
       # Second pass preparation
       mutate_feed = gdata.data.BatchFeed()
       mutate_feed_profiles = gdata.data.BatchFeed()
-      for (index, action, contact_id, new_entry) in operations_chunk:                        
+      for (index, action, contact_id, new_entry) in operations_chunk:
         # Contact
         queried_result_contact = queried_results_by_index.get(index)
         # Profile
@@ -420,7 +448,7 @@ class ContactsManager(object):
           Log('Skipping Contacts mutate pass: no Contacts to mutate')
         else:                  
           Log('Mutating %d contact(s)...' % len(mutate_feed.entry))
-          mutated_results_by_index = self._ExecuteBatch(mutate_feed)        
+          mutated_results_by_index = self._ExecuteBatch(mutate_feed)
           for (index, action, contact_id, new_entry) in operations_chunk:
             mutated_result = mutated_results_by_index.get(index)
             if mutated_result:
@@ -468,7 +496,7 @@ class ContactsManager(object):
       contact_entries: The contacts to export.
       csv_file: The MS Outlook CSV file to export to, as a writable stream.
     """
-    outlook_serializer = OutlookSerializer()
+    outlook_serializer = OutlookSerializer()    
     csv_writer = outlook_serializer.CreateCsvWriter(csv_file)
     csv_writer.writerows(itertools.imap(outlook_serializer.ContactEntryToFields,
                                         contact_entries))
@@ -487,7 +515,7 @@ class ContactsManager(object):
       BatchResult objects.
     """
     batch_uri = self.contacts_client.GetFeedUri(contact_list=self.domain,
-                                                projection='base/batch')    
+                                                projection='full/batch')    
     
     result_feed = self.contacts_client.ExecuteBatch(batch_feed, 
                                                      batch_uri,
@@ -510,7 +538,7 @@ class ContactsManager(object):
     
     batch_uri = self.contacts_client.GetFeedUri(kind='profiles',
                                                 contact_list=self.domain,
-                                                projection='base/batch')    
+                                                projection='full/batch')    
     
     result_feed = self.contacts_client.ExecuteBatch(batch_feed, 
                                                      batch_uri,
@@ -529,7 +557,7 @@ class ContactsManager(object):
       self.is_success = (self.code < 400)
 
     def PrintResult(self, action, contact_id, new_entry, more=None):
-      outcome = self.is_success and 'OK' or 'Error'
+      outcome = self.is_success and 'OK' or 'Error'      
       message = ' [%s] %s %s: %s' % (
           action, outcome, self.status.code, self.status.reason)
       if self.status.text:
@@ -585,10 +613,31 @@ class OutlookSerializer(object):
     self.display_name_fields = (
         'First Name', 'Middle Name', 'Last Name', 'Suffix')
 
-    self.email_addresses = (  # Field name, relation, is primary
-        ('E-mail Address', gdata.data.WORK_REL, 'true'),
-        ('E-mail 2 Address', gdata.data.HOME_REL, None),
-        ('E-mail 3 Address', gdata.data.OTHER_REL, None),
+    self.email_addresses = (  # Field name, relation, is primary, priority
+        ('E-mail Address', gdata.data.WORK_REL, 'true', 0),
+        ('E-mail 2 Address', gdata.data.HOME_REL, None, 0),
+        ('E-mail 3 Address', gdata.data.OTHER_REL, None, 0),
+        ('E-mail 4 Address', gdata.data.WORK_REL, None, 1),
+        ('E-mail 5 Address', gdata.data.HOME_REL, None, 1),
+        ('E-mail 6 Address', gdata.data.OTHER_REL, None, 1),
+        ('E-mail 7 Address', gdata.data.WORK_REL, None, 2),
+        ('E-mail 8 Address', gdata.data.HOME_REL, None, 2),
+        ('E-mail 9 Address', gdata.data.OTHER_REL, None, 2),
+        ('E-mail 10 Address', gdata.data.HOME_REL, None, 3),
+        ('E-mail 11 Address', gdata.data.OTHER_REL, None, 3),
+        ('E-mail 12 Address', gdata.data.WORK_REL, None, 3),
+        ('E-mail 13 Address', gdata.data.HOME_REL, None, 4),
+        ('E-mail 14 Address', gdata.data.OTHER_REL, None, 4),
+        ('E-mail 15 Address', gdata.data.WORK_REL, None, 4),
+        ('E-mail 16 Address', gdata.data.HOME_REL, None, 5),
+        ('E-mail 17 Address', gdata.data.OTHER_REL, None, 5),
+        ('E-mail 18 Address', gdata.data.OTHER_REL, None, 5),
+        ('E-mail 19 Address', gdata.data.OTHER_REL, None, 6),
+        ('E-mail 20 Address', gdata.data.OTHER_REL, None, 6),
+        ('E-mail 21 Address', gdata.data.OTHER_REL, None, 6),
+        ('E-mail 22 Address', gdata.data.OTHER_REL, None, 7),
+        ('E-mail 23 Address', gdata.data.OTHER_REL, None, 7),
+        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),
       )
 
     self.postal_addresses = (  # Field name, relation
@@ -597,7 +646,7 @@ class OutlookSerializer(object):
         ('Other Address', gdata.data.OTHER_REL),
       )
 
-    self.primary_phone_numbers = (
+    self.primary_phone_numbers = ( # Field name, relation, priority
         ('Business Fax', gdata.data.WORK_FAX_REL, 0),
         ('Business Phone', gdata.data.WORK_REL, 0),
         ('Business Phone 2', gdata.data.WORK_REL, 1),
@@ -608,7 +657,7 @@ class OutlookSerializer(object):
         ('Mobile Phone', gdata.data.MOBILE_REL, 0),
         ('Pager', gdata.data.PAGER_REL, 0),
       )
-    self.other_phone_numbers = (
+    self.other_phone_numbers = ( # Field name, relation, priority
         ("Assistant's Phone", gdata.data.WORK_REL, 2),
         ('Callback', gdata.data.OTHER_REL, 1),
         ('Car Phone', gdata.data.CAR_REL, 0),
@@ -630,7 +679,8 @@ class OutlookSerializer(object):
         'Company',
         'Job Title',
         'Notes',
-      ]
+      ]        
+    
     def AppendFields(fields):
       export_fields.extend(map(operator.itemgetter(0), fields))
     map(AppendFields, (self.email_addresses,
@@ -677,7 +727,7 @@ class OutlookSerializer(object):
           name=org_name, title=org_title)
       contact_entry.organization.rel = gdata.data.OTHER_REL
 
-    for (field_name, rel, is_primary) in self.email_addresses:
+    for (field_name, rel, is_primary, priority) in self.email_addresses:
       email_address = GetField(field_name)
       if email_address:
         contact_entry.email.append(gdata.data.Email(
@@ -750,12 +800,16 @@ class OutlookSerializer(object):
       AddField('Job Title', contact_entry.organization.title, 'text')
 
     AddField('Notes', contact_entry.content, 'text')
-
-    email_addresses = {}
-    for email in contact_entry.email:
-      email_addresses.setdefault(email.rel, email.address)
-    for (field_name, rel, _) in self.email_addresses:
-      fields[field_name] = email_addresses.get(rel, '')
+    
+    email_addresses = [{},{},{},{},{},{},{},{}] # 8 priorities
+    for email in contact_entry.email:      
+      i=0; # i for priority values for rel repetitions
+      while email.rel in email_addresses[i]:
+        i+=1
+      else:
+        email_addresses[i].setdefault(email.rel, email.address)
+    for (field_name, rel, _, priority) in self.email_addresses:
+      fields[field_name] = email_addresses[priority].get(rel, '')
 
     postal_addresses = {}
     for structured_postal_address in contact_entry.structured_postal_address:
@@ -764,7 +818,7 @@ class OutlookSerializer(object):
     for (field_name, rel) in self.postal_addresses:
       fields[field_name] = postal_addresses.get(rel, '')    
 
-    phone_numbers = [{},{},{},{},{},{}]
+    phone_numbers = [{},{},{},{},{},{}]  # 6 priorities
     for phone_number in contact_entry.phone_number:
       i=0; # i for priority values for rel repetitions
       while phone_number.rel in phone_numbers[i]:

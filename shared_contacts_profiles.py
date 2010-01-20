@@ -30,7 +30,7 @@ import gdata.contacts.data
 BATCH_CHUNK_SIZE = 100
 
 # Number of contacts to retrieve at once in ContactsManager.GetAllContacts()
-READ_CHUNK_SIZE = 1000
+READ_CHUNK_SIZE = 500
 
 # Supported actions, for the "Action" CSV column, in lowercase.
 ACTION_ADD = 'add'

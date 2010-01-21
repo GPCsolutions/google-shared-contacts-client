@@ -492,8 +492,8 @@ class OutlookSerializer(object):
       )
 
     self.postal_addresses = (  # Field name, relation
-        ('Home Address', gdata.contacts.REL_WORK),
-        ('Business Address', gdata.contacts.REL_HOME),
+        ('Home Address', gdata.contacts.REL_HOME),
+        ('Business Address', gdata.contacts.REL_WORK),
         ('Other Address', gdata.contacts.REL_OTHER),
       )
 

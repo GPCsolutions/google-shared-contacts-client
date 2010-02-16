@@ -299,7 +299,7 @@ class ContactsManager(object):
         PrintContact(index, contact_entry, contact_id,
             ' (Invalid action: %s - ignoring the entry)' % action)
         ignored[0] += 1
-        return Nonelaaklal
+        return None
       
       if action == ACTION_ADD and contact_id:
         PrintContact(index, contact_entry, contact_id,
@@ -637,7 +637,16 @@ class OutlookSerializer(object):
         ('E-mail 21 Address', gdata.data.OTHER_REL, None, 6),
         ('E-mail 22 Address', gdata.data.WORK_REL, None, 7),
         ('E-mail 23 Address', gdata.data.HOME_REL, None, 7),
-        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),
+        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),        
+        ('E-mail 25 Address', gdata.data.WORK_REL, None, 8),
+        ('E-mail 26 Address', gdata.data.HOME_REL, None, 8),
+        ('E-mail 27 Address', gdata.data.OTHER_REL, None, 8),
+        ('E-mail 28 Address', gdata.data.WORK_REL, None, 9),
+        ('E-mail 29 Address', gdata.data.HOME_REL, None, 9),
+        ('E-mail 30 Address', gdata.data.OTHER_REL, None, 9),
+        ('E-mail 31 Address', gdata.data.WORK_REL, None, 10),
+        ('E-mail 32 Address', gdata.data.HOME_REL, None, 10),
+        ('E-mail 33 Address', gdata.data.OTHER_REL, None, 10),
       )
 
     self.postal_addresses = (  # Field name, relation
@@ -801,10 +810,10 @@ class OutlookSerializer(object):
 
     AddField('Notes', contact_entry.content, 'text')
     
-    email_addresses = [{},{},{},{},{},{},{},{}] # 8 priorities
+    email_addresses = [{},{},{},{},{},{},{},{},{},{},{}] # 11 priorities
     for email in contact_entry.email:      
       i=0; # i for priority values for rel repetitions
-      while email.rel in email_addresses[i]:
+      while i <= 10 and email.rel in email_addresses[i]:
         i+=1
       else:
         email_addresses[i].setdefault(email.rel, email.address)

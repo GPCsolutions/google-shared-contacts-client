@@ -637,7 +637,7 @@ class OutlookSerializer(object):
         ('E-mail 21 Address', gdata.data.OTHER_REL, None, 6),
         ('E-mail 22 Address', gdata.data.WORK_REL, None, 7),
         ('E-mail 23 Address', gdata.data.HOME_REL, None, 7),
-        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),        
+        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),                
         ('E-mail 25 Address', gdata.data.WORK_REL, None, 8),
         ('E-mail 26 Address', gdata.data.HOME_REL, None, 8),
         ('E-mail 27 Address', gdata.data.OTHER_REL, None, 8),
@@ -647,6 +647,42 @@ class OutlookSerializer(object):
         ('E-mail 31 Address', gdata.data.WORK_REL, None, 10),
         ('E-mail 32 Address', gdata.data.HOME_REL, None, 10),
         ('E-mail 33 Address', gdata.data.OTHER_REL, None, 10),
+        ('E-mail 34 Address', gdata.data.WORK_REL, None, 11),
+        ('E-mail 35 Address', gdata.data.HOME_REL, None, 11),
+        ('E-mail 36 Address', gdata.data.OTHER_REL, None, 11),
+        ('E-mail 37 Address', gdata.data.WORK_REL, None, 12),
+        ('E-mail 38 Address', gdata.data.HOME_REL, None, 12),
+        ('E-mail 39 Address', gdata.data.OTHER_REL, None, 12),
+        ('E-mail 40 Address', gdata.data.WORK_REL, None, 13),
+        ('E-mail 41 Address', gdata.data.HOME_REL, None, 13),
+        ('E-mail 42 Address', gdata.data.OTHER_REL, None, 13),
+        ('E-mail 43 Address', gdata.data.WORK_REL, None, 14),
+        ('E-mail 44 Address', gdata.data.HOME_REL, None, 14),
+        ('E-mail 45 Address', gdata.data.OTHER_REL, None, 14),
+        ('E-mail 46 Address', gdata.data.WORK_REL, None, 15),
+        ('E-mail 47 Address', gdata.data.HOME_REL, None, 15),
+        ('E-mail 48 Address', gdata.data.OTHER_REL, None, 15),
+        ('E-mail 49 Address', gdata.data.WORK_REL, None, 16),
+        ('E-mail 50 Address', gdata.data.HOME_REL, None, 16),
+        ('E-mail 51 Address', gdata.data.OTHER_REL, None, 16),
+        ('E-mail 52 Address', gdata.data.WORK_REL, None, 17),
+        ('E-mail 53 Address', gdata.data.HOME_REL, None, 17),
+        ('E-mail 54 Address', gdata.data.OTHER_REL, None, 17),
+        ('E-mail 55 Address', gdata.data.WORK_REL, None, 18),
+        ('E-mail 56 Address', gdata.data.HOME_REL, None, 18),
+        ('E-mail 57 Address', gdata.data.OTHER_REL, None, 18),
+        ('E-mail 58 Address', gdata.data.WORK_REL, None, 19),
+        ('E-mail 59 Address', gdata.data.HOME_REL, None, 19),
+        ('E-mail 60 Address', gdata.data.OTHER_REL, None, 19),
+        ('E-mail 61 Address', gdata.data.WORK_REL, None, 20),
+        ('E-mail 62 Address', gdata.data.HOME_REL, None, 20),
+        ('E-mail 63 Address', gdata.data.OTHER_REL, None, 20),
+        ('E-mail 64 Address', gdata.data.WORK_REL, None, 21),
+        ('E-mail 65 Address', gdata.data.HOME_REL, None, 21),
+        ('E-mail 66 Address', gdata.data.OTHER_REL, None, 21),
+        ('E-mail 67 Address', gdata.data.WORK_REL, None, 22),
+        ('E-mail 68 Address', gdata.data.HOME_REL, None, 22),
+        ('E-mail 69 Address', gdata.data.OTHER_REL, None, 22),
       )
 
     self.postal_addresses = (  # Field name, relation
@@ -692,9 +728,9 @@ class OutlookSerializer(object):
     
     def AppendFields(fields):
       export_fields.extend(map(operator.itemgetter(0), fields))
-    map(AppendFields, (self.email_addresses,
+    map(AppendFields, (self.primary_phone_numbers,
                        self.postal_addresses,
-                       self.primary_phone_numbers))
+                       self.email_addresses))
     self.export_fields = tuple(export_fields)
 
   def FieldsToContactEntry(self, fields):
@@ -808,17 +844,7 @@ class OutlookSerializer(object):
       AddField('Company', contact_entry.organization.title, 'text')
       AddField('Job Title', contact_entry.organization.title, 'text')
 
-    AddField('Notes', contact_entry.content, 'text')
-    
-    email_addresses = [{},{},{},{},{},{},{},{},{},{},{}] # 11 priorities
-    for email in contact_entry.email:      
-      i=0; # i for priority values for rel repetitions
-      while i <= 10 and email.rel in email_addresses[i]:
-        i+=1
-      else:
-        email_addresses[i].setdefault(email.rel, email.address)
-    for (field_name, rel, _, priority) in self.email_addresses:
-      fields[field_name] = email_addresses[priority].get(rel, '')
+    AddField('Notes', contact_entry.content, 'text')       
 
     postal_addresses = {}
     for structured_postal_address in contact_entry.structured_postal_address:
@@ -836,6 +862,19 @@ class OutlookSerializer(object):
         phone_numbers[i].setdefault(phone_number.rel, phone_number.text)
     for (field_name, rel, priority) in self.primary_phone_numbers:
         fields[field_name] = phone_numbers[priority].get(rel, '')
+        
+    email_addresses = [{},{},{},{},{},{},{},{},{},{},
+                       {},{},{},{},{},{},{},{},{},{},
+                       {},{},{}] # 23 priorities
+    for email in contact_entry.email:      
+      i=0; # i for priority values for rel repetitions
+      while i <= 10 and email.rel in email_addresses[i]:
+        i+=1
+      else:
+        email_addresses[i].setdefault(email.rel, email.address)
+    for (field_name, rel, _, priority) in self.email_addresses:
+      fields[field_name] = email_addresses[priority].get(rel, '')
+    
     return fields
 
 

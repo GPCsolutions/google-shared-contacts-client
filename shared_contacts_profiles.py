@@ -716,6 +716,16 @@ class OutlookSerializer(object):
       )
     self.phone_numbers = tuple(list(self.primary_phone_numbers) +
                                list(self.other_phone_numbers))
+    
+    self.websites = (  # Field name, relation
+        ('Website Home-Page', 'home-page'),
+        ('Website Blog', 'blog'),
+        ('Website Profile', 'profile'),
+        ('Website Home', 'home'),
+        ('Website Work', 'work'),        
+        ('Website Other', 'other'),
+        ('Website FTP', 'ftp'),
+      )
 
     export_fields = [
         'Action',
@@ -723,14 +733,15 @@ class OutlookSerializer(object):
         'Name',
         'Company',
         'Job Title',
-        'Notes',
+        'Notes',        
       ]        
     
     def AppendFields(fields):
       export_fields.extend(map(operator.itemgetter(0), fields))
     map(AppendFields, (self.primary_phone_numbers,
                        self.postal_addresses,
-                       self.email_addresses))
+                       self.email_addresses,
+                       self.websites))
     self.export_fields = tuple(export_fields)
 
   def FieldsToContactEntry(self, fields):
@@ -791,6 +802,14 @@ class OutlookSerializer(object):
       if phone_number:
         contact_entry.phone_number.append(gdata.data.PhoneNumber(
             text=phone_number, rel=rel))
+        
+    for (field_name, rel) in self.websites:
+      website = GetField(field_name)      
+      if website:
+        contact_entry.website.append(
+          gdata.contacts.data.Website(
+            href=website,
+            rel=rel))
 
     return contact_entry
 
@@ -874,6 +893,12 @@ class OutlookSerializer(object):
         email_addresses[i].setdefault(email.rel, email.address)
     for (field_name, rel, _, priority) in self.email_addresses:
       fields[field_name] = email_addresses[priority].get(rel, '')
+      
+    websites = {}
+    for website in contact_entry.website  :
+      websites.setdefault(website.rel, website.href)
+    for (field_name, rel) in self.websites:
+      fields[field_name] = websites.get(rel, '')
     
     return fields
 

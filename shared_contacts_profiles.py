@@ -706,7 +706,7 @@ class OutlookSerializer(object):
         ("Assistant's Phone", gdata.data.WORK_REL, 2),
         ('Callback', gdata.data.OTHER_REL, 1),
         ('Car Phone', gdata.data.CAR_REL, 0),
-        ('Company Main Phone', gdata.data.WORK_REL, 0),
+        ('Company Main Phone', gdata.data.COMPANY_MAIN_REL, 0),
         ('ISDN', gdata.data.OTHER_REL, 2),
         ('Other Fax', gdata.data.FAX_REL, 0),
         ('Primary Phone', gdata.data.WORK_REL, 3),

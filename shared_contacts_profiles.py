@@ -16,6 +16,9 @@
 
 import copy
 import csv
+import codecs
+import cStringIO
+import pprint
 import getpass
 import itertools
 import operator
@@ -256,20 +259,20 @@ class ContactsManager(object):
     uri = self.GetProfileUrl(profile_short_id)      
     return self.contacts_client.Get(uri, desired_class=gdata.contacts.data.ProfileEntry)
 
-  def ImportMsOutlookCsv(self, input_csv_file, output_csv_file, dry_run=False):
+  def ImportMsOutlookCsv(self, import_csv_file_name, output_csv_file, dry_run=False):
     """Imports an MS Outlook contacts/profiles CSV file into the contact list.
 
     Contacts are batch-imported by chunks of BATCH_CHUNK_SIZE.
 
     Args:
-      input_csv_file: The MS Outlook CSV file to import, as a readable stream.
+      import_csv_file_name: The MS Outlook CSV file name to import, as a readable stream.
       output_csv_file: The file where the added and updated contacts/profiles
         CSV entries, as a writable stream. Optional.
       dry_run: If set to True, reads the CSV file but does not actually import
         the contact entries. Useful to check the CSV file syntax.
     """
     outlook_serializer = OutlookSerializer()
-    csv_reader = csv.DictReader(input_csv_file, delimiter=',')
+      
     if output_csv_file:
       csv_writer = outlook_serializer.CreateCsvWriter(output_csv_file)
     else:
@@ -291,6 +294,7 @@ class ContactsManager(object):
         An action tuple (action, entry), where action is taken from the "Action"
         field and entry the contact GData entry built from the CSV line.
       """
+        
       action = fields.get('Action', DEFAULT_ACTION).lower()
       contact_id = fields.get('ID')      
       contact_entry = outlook_serializer.FieldsToContactEntry(fields)
@@ -337,7 +341,31 @@ class ContactsManager(object):
 
       PrintContact(index, contact_entry, contact_id, ' [%s]' % action)
       return (index, action, contact_id, contact_entry)
-
+    
+    # Finding the correct encoding for the file
+    csv_reader = None
+    all_encoding = ["utf-8", "iso-8859-1", "iso-8859-2", "us-ascii", 'windows-1250', 'windows-1252']
+    encoding_index = 0
+    print "Detecting encoding of the CSV file..."
+    while csv_reader == None:  
+      next_encoding = all_encoding[encoding_index]
+      print "Trying %s" % (next_encoding)
+      input_csv_file = open(import_csv_file_name, 'rt')
+      csv_reader = UnicodeDictReader(input_csv_file, delimiter=',', encoding=next_encoding)
+      try:
+        for line in enumerate(csv_reader):
+            # Do nothing, just reading the whole file
+            encoding_index = encoding_index
+      except UnicodeDecodeError:
+        csv_reader = None
+        input_csv_file.close()
+        encoding_index = encoding_index + 1
+    
+    print "Correct encoding of the file is %s" % (next_encoding)
+    input_csv_file.close()
+    input_csv_file = open(import_csv_file_name, 'rt')
+    csv_reader = UnicodeDictReader(input_csv_file, delimiter=',', encoding=next_encoding)
+    
     operations_it = itertools.imap(CsvLineToOperation, enumerate(csv_reader))
     operations_it = itertools.ifilter(None, operations_it)
 
@@ -486,6 +514,7 @@ class ContactsManager(object):
       # Update total statistics
       total_stats.Add(chunk_stats)
 
+    input_csv_file.close()
     # Print total statistics
     Log('### Total contacts/profiles %s - ignored: %s' % (total_stats, ignored[0]))
 
@@ -523,6 +552,7 @@ class ContactsManager(object):
     
     results = map(self.BatchResult, result_feed.entry)
     results_by_index = dict((result.batch_index, result) for result in results)
+      
     return results_by_index
     
   def _ExecuteBatchProfile(self, batch_feed):
@@ -550,23 +580,31 @@ class ContactsManager(object):
     
   class BatchResult(object):
     def __init__(self, result_entry):
-      self.batch_index = int(result_entry.batch_id.text)
+      if(result_entry.batch_id == None):
+        self.batch_index = 99   
+        self.code = 500
+        self.status = None
+      else:
+        self.batch_index = int(result_entry.batch_id.text)
+        self.status = result_entry.batch_status
+        self.code = int(self.status.code)
       self.entry = result_entry
-      self.status = result_entry.batch_status
-      self.code = int(self.status.code)
       self.is_success = (self.code < 400)
 
     def PrintResult(self, action, contact_id, new_entry, more=None):
-      outcome = self.is_success and 'OK' or 'Error'      
-      message = ' [%s] %s %s: %s' % (
-          action, outcome, self.status.code, self.status.reason)
-      if self.status.text:
-        Log('Error: ' % self.status.text)
-        existing_id = GetContactShortId(existing_entry)
-        message = '%s - existing ID: %s' % (message, existing_id)
-      if more:
-        message = '%s %s' % (message, more)
-      PrintContact(self.batch_index, new_entry, contact_id, message)
+      outcome = self.is_success and 'OK' or 'Error'   
+      if(self.status != None):
+        message = ' [%s] %s %i: %s' % (
+            action, outcome, self.code, self.status.reason)
+        if self.status.text:
+          Log('Error: ' % self.status.text)
+          existing_id = GetContactShortId(existing_entry)
+          message = '%s - existing ID: %s' % (message, existing_id)
+        if more:
+          message = '%s %s' % (message, more)
+        PrintContact(self.batch_index, new_entry, contact_id, message)
+      else:  
+        Log('  ...)  Error Batch Interrupted')
 
   def DeleteAllContacts(self):
     """Empties the contact list. Asks for confirmation first."""
@@ -602,6 +640,77 @@ class ContactsManager(object):
             result.PrintResult('delete', GetContactShortId(result.entry), None)
         
     Log('All Shared Contacts deleted: %d total' % deleted_total)
+
+class UTF8Recoder:
+    """
+    Iterator that reads an encoded stream and reencodes the input to UTF-8
+    """
+    def __init__(self, f, encoding):
+        self.reader = codecs.getreader(encoding)(f)
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        return self.reader.next().encode("utf-8")
+
+class UnicodeDictReader:
+    """
+    A CSV reader which will iterate over lines in the CSV file "f",
+    which is encoded in the given encoding.
+    """
+
+    def __init__(self, f, delimiter=',', dialect=csv.excel, encoding="utf-8"):
+        f = UTF8Recoder(f, encoding)
+        self.reader = csv.DictReader(f, delimiter=delimiter, dialect=dialect)
+
+    def next(self):
+        row = self.reader.next()
+        for key in row:
+            if row[key] != None:
+              row[key] = row[key].decode("utf-8")
+            else:
+              row[key] = ''
+        return row
+
+    def __iter__(self):
+        return self
+
+class UnicodeDictWriter:
+    """
+    A CSV writer which will write rows to CSV file "f",
+    which is encoded in the given encoding.
+    """
+
+    def __init__(self, f, fieldnames, delimiter=',', dialect=csv.excel, encoding="utf-8"):
+        # Redirect output to a queue
+        self.queue = cStringIO.StringIO()
+        self.writer = csv.DictWriter(self.queue, fieldnames, delimiter=delimiter)
+        self.stream = f
+        self.encoder = codecs.getincrementalencoder(encoding)()
+
+    def writerow(self, row):
+        rowEncodedCopy = {}
+        for key in row:
+            if row[key] != None:
+              rowEncodedCopy[key] = row[key].encode("utf-8", "ignore")
+            else:
+              rowEncodedCopy[key] = row[key]
+              
+        self.writer.writerow(rowEncodedCopy)
+        # Fetch UTF-8 output from the queue ...
+        data = self.queue.getvalue()
+        data = data.decode("utf-8")
+        # ... and reencode it into the target encoding
+        data = self.encoder.encode(data)
+        # write to the target stream
+        self.stream.write(data)
+        # empty queue
+        self.queue.truncate(0)
+
+    def writerows(self, rows):
+        for row in rows:
+            self.writerow(row)
 
 
 class OutlookSerializer(object):
@@ -824,7 +933,7 @@ class OutlookSerializer(object):
     Returns:
       The created csv.DictWriter.
     """
-    csv_writer = csv.DictWriter(csv_file, delimiter=',',
+    csv_writer = UnicodeDictWriter(csv_file, delimiter=',',
                                 fieldnames=self.export_fields)
     csv_writer.writerow(dict(zip(self.export_fields, self.export_fields)))
     return csv_writer
@@ -895,7 +1004,7 @@ class OutlookSerializer(object):
       fields[field_name] = email_addresses[priority].get(rel, '')
       
     websites = {}
-    for website in contact_entry.website  :
+    for website in contact_entry.website:
       websites.setdefault(website.rel, website.href)
     for (field_name, rel) in self.websites:
       fields[field_name] = websites.get(rel, '')
@@ -961,7 +1070,6 @@ parameters in the command line."""
   # Check import_csv_file_name
   if import_csv_file_name:
     try:
-      import_csv_file = open(import_csv_file_name, 'rt')
       Log('Outlook CSV file to import: %s' % import_csv_file_name)
     except IOError, e:
       parser.error('Unable to open %s\n%s\nPlease set the --import command-line'
@@ -1010,9 +1118,8 @@ parameters in the command line."""
 
   if import_csv_file_name:
     Log('\n### Importing contacts/profiles CSV file: %s' % import_csv_file_name)
-    contacts_manager.ImportMsOutlookCsv(import_csv_file, output_csv_file,
+    contacts_manager.ImportMsOutlookCsv(import_csv_file_name, output_csv_file,
                                         dry_run=dry_run)
-    import_csv_file.close()
 
   if export_csv_file_name:
     if dry_run:

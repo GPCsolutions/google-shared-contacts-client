@@ -668,7 +668,14 @@ class UnicodeDictReader:
         row = self.reader.next()
         for key in row:
             if row[key] != None:
-              row[key] = row[key].decode("utf-8")
+              try:
+                row[key] = row[key].decode("utf-8")
+              # Special case, sometimes the content gets reqd as a list
+              except AttributeError:
+                  newList = []
+                  for item in row[key]:
+                      newList.append(item.decode("utf-8"))
+                  row[key] = newList
             else:
               row[key] = ''
         return row

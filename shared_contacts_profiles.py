@@ -344,7 +344,7 @@ class ContactsManager(object):
     
     # Finding the correct encoding for the file
     csv_reader = None
-    all_encoding = ["utf-8", "iso-8859-1", "iso-8859-2", "us-ascii", 'windows-1250', 'windows-1252']
+    all_encoding = ["utf-8", "iso-8859-1", "iso-8859-2", 'iso-8859-15', 'iso-8859-3', "us-ascii", 'windows-1250', 'windows-1252', 'windows-1254', 'ibm861']
     encoding_index = 0
     print "Detecting encoding of the CSV file..."
     while csv_reader == None:  
@@ -597,7 +597,7 @@ class ContactsManager(object):
         message = ' [%s] %s %i: %s' % (
             action, outcome, self.code, self.status.reason)
         if self.status.text:
-          Log('Error: ' % self.status.text)
+          Log('Error: %s' % self.status.text)
           existing_id = GetContactShortId(existing_entry)
           message = '%s - existing ID: %s' % (message, existing_id)
         if more:

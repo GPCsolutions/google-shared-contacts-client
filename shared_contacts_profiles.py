@@ -1110,7 +1110,7 @@ parameters in the command line."""
     Log('Using password passed to --password')
 
   # Construct the Contacts service and authenticate
-  contacts_client = gdata.contacts.client.ContactsClient()
+  contacts_client = gdata.contacts.client.ContactsClient(domain=domain)
   contacts_client.client_login(email=admin_email,
                                 password=admin_password,
                                 source='shared_contacts_profiles',

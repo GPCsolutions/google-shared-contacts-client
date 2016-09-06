@@ -10,7 +10,7 @@ Example CSV file for ```python shared_contacts_profiles.py --import```: [outlook
 # Installation
 
 ```
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 # Setup

@@ -1,6 +1,8 @@
-#!/usr/bin/python
-#
+#!/usr/bin/env python
+# coding=utf-8
+
 # Copyright (C) 2008 Google Inc.
+# Copyright (C) 2016 GPC.solutions
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,20 +16,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""A script to manage Google Apps Domain Shared Contacts."""
+
+import cStringIO
+import codecs
 import copy
 import csv
-import codecs
-import cStringIO
-import pprint
-import getpass
 import itertools
 import operator
 import optparse
 import sys
+
 import atom
-import gdata.data
 import gdata.contacts.client
 import gdata.contacts.data
+import gdata.data
+from oauth2client import tools
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.file import Storage
+
+__author__ = "Google Inc., Raphaël Doursenaud"
+__copyright__ = "Copyright 2016 GPC.solutions, Copyright 2008 Google Inc"
+
+__license__ = "Apache 2.0"
+__maintainer__ = "Raphaël Doursenaud"
+__email__ = "rdoursenaud@gpcsolutions.fr"
+__status__ = "Production"
+
+SCOPE = 'http://www.google.com/m8/feeds/contacts/'
 
 # Maximum number of operations in batch feeds.
 BATCH_CHUNK_SIZE = 100
@@ -196,7 +212,7 @@ class ContactsManager(object):
     """
     return self.contacts_client.GetFeedUri(
         contact_list=self.domain, scheme='http', projection='full/%s' % contact_short_id)
-    
+
   def GetAllContacts(self):
     """Retrieves all contacts in the contact list.
 
@@ -206,7 +222,7 @@ class ContactsManager(object):
     feed_url = self.contacts_client.GetFeedUri(contact_list=self.domain, projection='full')
     total_read = 0
     while True:
-      Log('Retrieving contacts... (%d retrieved so far)' % total_read)      
+      Log('Retrieving contacts... (%d retrieved so far)' % total_read)
       feed = self.contacts_client.get_feed(uri=feed_url,
                                            auth_token=None,
                                            desired_class=gdata.contacts.data.ContactsFeed)
@@ -223,10 +239,10 @@ class ContactsManager(object):
     """Retrieves the GData read-only URL of a profile from its short ID.
 
     Uses the /full projection.
-    """      
+    """
     return self.contacts_client.GetFeedUri(
         kind='profiles', contact_list=self.domain,
-        scheme='http', projection='full/%s' % profile_short_id)  
+        scheme='http', projection='full/%s' % profile_short_id)
 
   def GetAllProfiles(self):
     """Retrieves all profiles in the domain.
@@ -250,13 +266,13 @@ class ContactsManager(object):
         Log('All profiles retrieved: %d total' % total_read)
         break
       feed_url = next_link.href
-      
+
   def GetProfile(self,profile_short_id):
     """Gets a single profile from its short ID.
 
     Uses the /full projection.
-    """        
-    uri = self.GetProfileUrl(profile_short_id)      
+    """
+    uri = self.GetProfileUrl(profile_short_id)
     return self.contacts_client.Get(uri, desired_class=gdata.contacts.data.ProfileEntry)
 
   def ImportMsOutlookCsv(self, import_csv_file_name, output_csv_file, dry_run=False):
@@ -272,7 +288,7 @@ class ContactsManager(object):
         the contact entries. Useful to check the CSV file syntax.
     """
     outlook_serializer = OutlookSerializer()
-      
+
     if output_csv_file:
       csv_writer = outlook_serializer.CreateCsvWriter(output_csv_file)
     else:
@@ -294,9 +310,9 @@ class ContactsManager(object):
         An action tuple (action, entry), where action is taken from the "Action"
         field and entry the contact GData entry built from the CSV line.
       """
-        
+
       action = fields.get('Action', DEFAULT_ACTION).lower()
-      contact_id = fields.get('ID')      
+      contact_id = fields.get('ID')
       contact_entry = outlook_serializer.FieldsToContactEntry(fields)
 
       if action not in ACTIONS:
@@ -304,17 +320,17 @@ class ContactsManager(object):
             ' (Invalid action: %s - ignoring the entry)' % action)
         ignored[0] += 1
         return None
-      
+
       if action == ACTION_ADD and contact_id:
         PrintContact(index, contact_entry, contact_id,
             ' (A contact to be added should not have an ID or Profiles cannot be added - ignoring the entry)')
         ignored[0] += 1
         return None
-      
+
       if action == ACTION_ADD and not contact_id:
         # if email address is in the domain the Contact could be a Profile
         for email in contact_entry.email:
-          domain_str_index = email.address.find("@"+self.domain)          
+          domain_str_index = email.address.find("@"+self.domain)
           if domain_str_index > 0:
             # Email is part of the domain: a user or a group
             profile_short_id = email.address[:domain_str_index]
@@ -325,14 +341,14 @@ class ContactsManager(object):
             except gdata.client.RequestError, detail:
               # Skipping any errors and use Shared Contacts instead.
               pass
-            # Checking if the Profiles API should be use for domain users            
+            # Checking if the Profiles API should be use for domain users
             if tempProfileEntry:
                # Changing Shared Contact to a Profile Update Action
                contact_id = profile_short_id
                action = ACTION_UPDATE
                PrintContact(index, contact_entry, contact_id, ' [update] (using Profiles)')
                return (index, action, contact_id, contact_entry)
-            
+
       if action in (ACTION_UPDATE, ACTION_DELETE) and not contact_id:
         PrintContact(index, contact_entry, contact_id, ' A contact to be '
             ' (update or delete must have an ID - ignoring the entry)')
@@ -341,13 +357,13 @@ class ContactsManager(object):
 
       PrintContact(index, contact_entry, contact_id, ' [%s]' % action)
       return (index, action, contact_id, contact_entry)
-    
+
     # Finding the correct encoding for the file
     csv_reader = None
     all_encoding = ["utf-8", "iso-8859-1", "iso-8859-2", 'iso-8859-15', 'iso-8859-3', "us-ascii", 'windows-1250', 'windows-1252', 'windows-1254', 'ibm861']
     encoding_index = 0
     print "Detecting encoding of the CSV file..."
-    while csv_reader == None:  
+    while csv_reader == None:
       next_encoding = all_encoding[encoding_index]
       print "Trying %s" % (next_encoding)
       input_csv_file = open(import_csv_file_name, 'rt')
@@ -360,12 +376,12 @@ class ContactsManager(object):
         csv_reader = None
         input_csv_file.close()
         encoding_index = encoding_index + 1
-    
+
     print "Correct encoding of the file is %s" % (next_encoding)
     input_csv_file.close()
     input_csv_file = open(import_csv_file_name, 'rt')
     csv_reader = UnicodeDictReader(input_csv_file, delimiter=',', encoding=next_encoding)
-    
+
     operations_it = itertools.imap(CsvLineToOperation, enumerate(csv_reader))
     operations_it = itertools.ifilter(None, operations_it)
 
@@ -376,7 +392,7 @@ class ContactsManager(object):
     def CopyContactId(from_entry, to_entry):
       to_entry.id = from_entry.id
       to_entry.category = from_entry.category
-      to_entry.link = from_entry.link      
+      to_entry.link = from_entry.link
       to_entry.etag = from_entry.etag
 
     for operations_chunk in Chunks(operations_it, BATCH_CHUNK_SIZE):
@@ -392,8 +408,8 @@ class ContactsManager(object):
       # - Update action: update
       # - Delete action: delete
 
-      chunk_stats = ImportStats()            
-      
+      chunk_stats = ImportStats()
+
       # First pass preparation
       for (index, action, contact_id, contact_entry) in operations_chunk:
         if contact_id:
@@ -401,7 +417,7 @@ class ContactsManager(object):
           query_feed.AddQuery(url_contact, batch_id_string=str(index))
           url_profile = self.GetProfileUrl(contact_id)
           query_feed_profiles.AddQuery(url_profile, batch_id_string=str(index))
-      
+
       # First pass execution
       if not query_feed.entry:
         Log('Skipping query pass: nothing to update or delete')
@@ -411,7 +427,7 @@ class ContactsManager(object):
         Log('Querying %d contacts/profiles(s)...' % len(query_feed_profiles.entry))
         queried_results_by_index = self._ExecuteBatch(query_feed)
         queried_results_by_index_profiles = self._ExecuteBatchProfile(query_feed_profiles)
-      
+
       # Second pass preparation
       mutate_feed = gdata.data.BatchFeed()
       mutate_feed_profiles = gdata.data.BatchFeed()
@@ -419,10 +435,10 @@ class ContactsManager(object):
         # Contact
         queried_result_contact = queried_results_by_index.get(index)
         # Profile
-        queried_result_profiles = queried_results_by_index_profiles.get(index)                                
+        queried_result_profiles = queried_results_by_index_profiles.get(index)
         # if is a Contact then is not a Profile
         if queried_result_contact and not queried_result_profiles.is_success:
-          queried_result_contact.PrintResult(action, contact_id, new_entry, '(Shared Contact)')        
+          queried_result_contact.PrintResult(action, contact_id, new_entry, '(Shared Contact)')
         # if is a Profile then is not a Contact:
         if queried_result_profiles and not queried_result_contact.is_success:
           queried_result_profiles.PrintResult(action, contact_id, new_entry, '(Profile)')
@@ -434,7 +450,7 @@ class ContactsManager(object):
         new_entry = copy.deepcopy(new_entry)
 
         # ADD is only supported by Contacts (Not supported by Profiles)
-        if action == ACTION_ADD:          
+        if action == ACTION_ADD:
           chunk_stats.added_total += 1
           mutate_feed.AddInsert(entry=new_entry,
                                 batch_id_string=batch_id_string)
@@ -453,13 +469,13 @@ class ContactsManager(object):
                                   batch_id_string=batch_id_string)
 
         # DELETE is only supported by Contacts (Not supported by Profiles)
-        elif action == ACTION_DELETE:          
+        elif action == ACTION_DELETE:
           if queried_result_profiles and queried_result_profiles.is_success:
-            queried_result_profiles.PrintResult(action, contact_id, new_entry, '(A Profile cannot be deleted - ignoring the entry)')                        
+            queried_result_profiles.PrintResult(action, contact_id, new_entry, '(A Profile cannot be deleted - ignoring the entry)')
             ignored[0] += 1
           else:
             chunk_stats.deleted_total += 1
-            if queried_result_contact and queried_result_contact.is_success:              
+            if queried_result_contact and queried_result_contact.is_success:
               mutate_feed.AddDelete(queried_result_contact.entry.GetEditLink().href,
                                     queried_result_contact.entry,
                                   batch_id_string=batch_id_string)
@@ -469,12 +485,12 @@ class ContactsManager(object):
         Log('[Dry run] %d contact(s) would have been mutated' %
             len(mutate_feed.entry))
         Log('[Dry run] %d profiles(s) would have been mutated' %
-            len(mutate_feed_profiles.entry))      
+            len(mutate_feed_profiles.entry))
       else:
         # Second pass results Contacts
         if not mutate_feed.entry:
           Log('Skipping Contacts mutate pass: no Contacts to mutate')
-        else:                  
+        else:
           Log('Mutating %d contact(s)...' % len(mutate_feed.entry))
           mutated_results_by_index = self._ExecuteBatch(mutate_feed)
           for (index, action, contact_id, new_entry) in operations_chunk:
@@ -498,14 +514,14 @@ class ContactsManager(object):
           Log('Skipping Profiles mutate pass: no Profiles to mutate')
         else:
           Log('Mutating %d profiles(s)...' % len(mutate_feed_profiles.entry))
-          mutated_results_by_index_profiles = self._ExecuteBatchProfile(mutate_feed_profiles)        
+          mutated_results_by_index_profiles = self._ExecuteBatchProfile(mutate_feed_profiles)
           for (index, action, contact_id, new_entry) in operations_chunk:
             mutated_result_profiles = mutated_results_by_index_profiles.get(index)
             if mutated_result_profiles:
               details = None
               if mutated_result_profiles.is_success:
                 chunk_stats.updated_done += 1
-                WriteCsvRow(mutated_result_profiles.entry)             
+                WriteCsvRow(mutated_result_profiles.entry)
               mutated_result_profiles.PrintResult(action, contact_id, new_entry, details)
 
       # Print statistics
@@ -525,7 +541,7 @@ class ContactsManager(object):
       contact_entries: The contacts to export.
       csv_file: The MS Outlook CSV file to export to, as a writable stream.
     """
-    outlook_serializer = OutlookSerializer()    
+    outlook_serializer = OutlookSerializer()
     csv_writer = outlook_serializer.CreateCsvWriter(csv_file)
     csv_writer.writerows(itertools.imap(outlook_serializer.ContactEntryToFields,
                                         contact_entries))
@@ -544,17 +560,17 @@ class ContactsManager(object):
       BatchResult objects.
     """
     batch_uri = self.contacts_client.GetFeedUri(contact_list=self.domain,
-                                                projection='full/batch')    
-    
-    result_feed = self.contacts_client.ExecuteBatch(batch_feed, 
+                                                projection='full/batch')
+
+    result_feed = self.contacts_client.ExecuteBatch(batch_feed,
                                                      batch_uri,
                                                      desired_class=gdata.contacts.data.ContactsFeed)
-    
+
     results = map(self.BatchResult, result_feed.entry)
     results_by_index = dict((result.batch_index, result) for result in results)
-      
+
     return results_by_index
-    
+
   def _ExecuteBatchProfile(self, batch_feed):
     """Executes a batch profiles feed.
 
@@ -565,23 +581,23 @@ class ContactsManager(object):
       A dictionary mapping result batch indices (as integers) to the matching
       BatchResult objects.
     """
-    
+
     batch_uri = self.contacts_client.GetFeedUri(kind='profiles',
                                                 contact_list=self.domain,
-                                                projection='full/batch')    
-    
-    result_feed = self.contacts_client.ExecuteBatch(batch_feed, 
+                                                projection='full/batch')
+
+    result_feed = self.contacts_client.ExecuteBatch(batch_feed,
                                                      batch_uri,
                                                      desired_class=gdata.contacts.data.ProfilesFeed)
-    
+
     results = map(self.BatchResult, result_feed.entry)
     results_by_index = dict((result.batch_index, result) for result in results)
     return results_by_index
-    
+
   class BatchResult(object):
     def __init__(self, result_entry):
       if(result_entry.batch_id == None):
-        self.batch_index = 99   
+        self.batch_index = 99
         self.code = 500
         self.status = None
       else:
@@ -592,7 +608,7 @@ class ContactsManager(object):
       self.is_success = (self.code < 400)
 
     def PrintResult(self, action, contact_id, new_entry, more=None):
-      outcome = self.is_success and 'OK' or 'Error'   
+      outcome = self.is_success and 'OK' or 'Error'
       if(self.status != None):
         message = ' [%s] %s %i: %s' % (
             action, outcome, self.code, self.status.reason)
@@ -603,7 +619,7 @@ class ContactsManager(object):
         if more:
           message = '%s %s' % (message, more)
         PrintContact(self.batch_index, new_entry, contact_id, message)
-      else:  
+      else:
         Log('  ...)  Error Batch Interrupted')
 
   def DeleteAllContacts(self):
@@ -626,19 +642,19 @@ class ContactsManager(object):
       if not read_feed.entry:
         break
       # Delete the contacts in batch, in smaller chunks
-      for chunk in Chunks(read_feed.entry, BATCH_CHUNK_SIZE):        
+      for chunk in Chunks(read_feed.entry, BATCH_CHUNK_SIZE):
         delete_feed = gdata.contacts.data.ContactsFeed()
         for contact_entry in chunk:
           delete_feed.add_delete(contact_entry.GetEditLink().href, contact_entry)
         Log('Deleting %d contacts... (%d deleted so far)' % (
-            len(delete_feed.entry), deleted_total))        
+            len(delete_feed.entry), deleted_total))
         results = self.contacts_client.ExecuteBatch(delete_feed, batch_uri)
         for result in map(self.BatchResult, results.entry):
           if result.is_success:
             deleted_total += 1
           else:
             result.PrintResult('delete', GetContactShortId(result.entry), None)
-        
+
     Log('All Shared Contacts deleted: %d total' % deleted_total)
 
 class UTF8Recoder:
@@ -703,7 +719,7 @@ class UnicodeDictWriter:
               rowEncodedCopy[key] = row[key].encode("utf-8", "ignore")
             else:
               rowEncodedCopy[key] = row[key]
-              
+
         self.writer.writerow(rowEncodedCopy)
         # Fetch UTF-8 output from the queue ...
         data = self.queue.getvalue()
@@ -738,13 +754,13 @@ class OutlookSerializer(object):
         ('E-mail 6 Address', gdata.data.OTHER_REL, None, 1),
         ('E-mail 7 Address', gdata.data.WORK_REL, None, 2),
         ('E-mail 8 Address', gdata.data.HOME_REL, None, 2),
-        ('E-mail 9 Address', gdata.data.OTHER_REL, None, 2),        
+        ('E-mail 9 Address', gdata.data.OTHER_REL, None, 2),
         ('E-mail 10 Address', gdata.data.WORK_REL, None, 3),
         ('E-mail 11 Address', gdata.data.HOME_REL, None, 3),
         ('E-mail 12 Address', gdata.data.OTHER_REL, None, 3),
         ('E-mail 13 Address', gdata.data.WORK_REL, None, 4),
         ('E-mail 14 Address', gdata.data.HOME_REL, None, 4),
-        ('E-mail 15 Address', gdata.data.OTHER_REL, None, 4),        
+        ('E-mail 15 Address', gdata.data.OTHER_REL, None, 4),
         ('E-mail 16 Address', gdata.data.WORK_REL, None, 5),
         ('E-mail 17 Address', gdata.data.HOME_REL, None, 5),
         ('E-mail 18 Address', gdata.data.OTHER_REL, None, 5),
@@ -753,7 +769,7 @@ class OutlookSerializer(object):
         ('E-mail 21 Address', gdata.data.OTHER_REL, None, 6),
         ('E-mail 22 Address', gdata.data.WORK_REL, None, 7),
         ('E-mail 23 Address', gdata.data.HOME_REL, None, 7),
-        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),                
+        ('E-mail 24 Address', gdata.data.OTHER_REL, None, 7),
         ('E-mail 25 Address', gdata.data.WORK_REL, None, 8),
         ('E-mail 26 Address', gdata.data.HOME_REL, None, 8),
         ('E-mail 27 Address', gdata.data.OTHER_REL, None, 8),
@@ -832,13 +848,13 @@ class OutlookSerializer(object):
       )
     self.phone_numbers = tuple(list(self.primary_phone_numbers) +
                                list(self.other_phone_numbers))
-    
+
     self.websites = (  # Field name, relation
         ('Website Home-Page', 'home-page'),
         ('Website Blog', 'blog'),
         ('Website Profile', 'profile'),
         ('Website Home', 'home'),
-        ('Website Work', 'work'),        
+        ('Website Work', 'work'),
         ('Website Other', 'other'),
         ('Website FTP', 'ftp'),
       )
@@ -849,9 +865,9 @@ class OutlookSerializer(object):
         'Name',
         'Company',
         'Job Title',
-        'Notes',        
-      ]        
-    
+        'Notes',
+      ]
+
     def AppendFields(fields):
       export_fields.extend(map(operator.itemgetter(0), fields))
     map(AppendFields, (self.primary_phone_numbers,
@@ -879,7 +895,7 @@ class OutlookSerializer(object):
 
     name = GetField('Name')
     if not name:
-      name = ' '.join(filter(None, map(GetField, self.display_name_fields)))            
+      name = ' '.join(filter(None, map(GetField, self.display_name_fields)))
     contact_entry.name = gdata.data.Name(full_name=gdata.data.FullName(text=name))
 
     notes = GetField('Notes')
@@ -887,7 +903,7 @@ class OutlookSerializer(object):
       contact_entry.content = atom.data.Content(text=notes)
 
     company_name = GetField('Company')
-    company_title = GetField('Job Title')    
+    company_title = GetField('Job Title')
     if company_name or company_title:
       org_name = None
       if company_name:
@@ -906,7 +922,7 @@ class OutlookSerializer(object):
             address=email_address, primary=is_primary, rel=rel))
 
     for (field_name, rel) in self.postal_addresses:
-      postal_address = GetField(field_name)      
+      postal_address = GetField(field_name)
       if postal_address:
         contact_entry.structured_postal_address.append(
           gdata.data.StructuredPostalAddress(
@@ -918,9 +934,9 @@ class OutlookSerializer(object):
       if phone_number:
         contact_entry.phone_number.append(gdata.data.PhoneNumber(
             text=phone_number, rel=rel))
-        
+
     for (field_name, rel) in self.websites:
-      website = GetField(field_name)      
+      website = GetField(field_name)
       if website:
         contact_entry.website.append(
           gdata.contacts.data.Website(
@@ -973,20 +989,20 @@ class OutlookSerializer(object):
 
     fields['Action'] = ACTION_UPDATE
     fields['ID'] = GetContactShortId(contact_entry)
-    AddField('Name', contact_entry.title, 'text')    
+    AddField('Name', contact_entry.title, 'text')
 
     if contact_entry.organization:
       AddField('Company', contact_entry.organization.title, 'text')
       AddField('Job Title', contact_entry.organization.title, 'text')
 
-    AddField('Notes', contact_entry.content, 'text')       
+    AddField('Notes', contact_entry.content, 'text')
 
     postal_addresses = {}
     for structured_postal_address in contact_entry.structured_postal_address:
       postal_addresses.setdefault(structured_postal_address.rel,
                                   structured_postal_address.formatted_address.text)
     for (field_name, rel) in self.postal_addresses:
-      fields[field_name] = postal_addresses.get(rel, '')    
+      fields[field_name] = postal_addresses.get(rel, '')
 
     phone_numbers = [{},{},{},{},{},{}]  # 6 priorities
     for phone_number in contact_entry.phone_number:
@@ -997,11 +1013,11 @@ class OutlookSerializer(object):
         phone_numbers[i].setdefault(phone_number.rel, phone_number.text)
     for (field_name, rel, priority) in self.primary_phone_numbers:
         fields[field_name] = phone_numbers[priority].get(rel, '')
-        
+
     email_addresses = [{},{},{},{},{},{},{},{},{},{},
                        {},{},{},{},{},{},{},{},{},{},
                        {},{},{}] # 23 priorities
-    for email in contact_entry.email:      
+    for email in contact_entry.email:
       i=0; # i for priority values for rel repetitions
       while i <= 10 and email.rel in email_addresses[i]:
         i+=1
@@ -1009,13 +1025,13 @@ class OutlookSerializer(object):
         email_addresses[i].setdefault(email.rel, email.address)
     for (field_name, rel, _, priority) in self.email_addresses:
       fields[field_name] = email_addresses[priority].get(rel, '')
-      
+
     websites = {}
     for website in contact_entry.website:
       websites.setdefault(website.rel, website.href)
     for (field_name, rel) in self.websites:
       fields[field_name] = websites.get(rel, '')
-    
+
     return fields
 
 
@@ -1029,8 +1045,6 @@ parameters in the command line."""
   parser = optparse.OptionParser(usage=usage)
   parser.add_option('-a', '--admin', default='', metavar='EMAIL',
       help="email address of an admin of the domain")
-  parser.add_option('-p', '--password', default=None, metavar='PASSWORD',
-      help="password of the --admin account")
   parser.add_option('-i', '--import', default=None, metavar='FILE',
       dest='import_csv', help="imports an MS Outlook CSV file, before export "
           "if --export is specified, after clearing if --clear is specified")
@@ -1052,7 +1066,6 @@ parameters in the command line."""
     parser.exit(msg='\nUnexpected arguments: %s' % ' '.join(args))
 
   admin_email = options.admin
-  admin_password = options.password
   import_csv_file_name = options.import_csv
   output_csv_file_name = options.output_csv
   export_csv_file_name = options.export_csv
@@ -1103,18 +1116,34 @@ parameters in the command line."""
   if dry_run:
     Log('Dry mode enabled')
 
-  # Ask for the admin password
-  if admin_password is None:
-    admin_password = getpass.getpass('Password of %s: ' % admin_email)
-  else:
-    Log('Using password passed to --password')
+  # OAuth2 flow
+  flow = flow_from_clientsecrets(
+      filename='client_secret.json',
+      scope=SCOPE,
+      redirect_uri='urn:ietf:wg:oauth:2.0:oob',
+      message='Please create a project in the Google Developer Console and place the client_secret.json '
+              'authorization file along this script',
+      login_hint=admin_email
+  )
+  storage = Storage('credentials.json')
+  credentials = storage.get()
+  if credentials is None:
+    credentials = tools.run_flow(flow, storage, tools.argparser.parse_args([]))
+
+  # FIXME: Handle flow error
+
+  # GData with access token
+  token = gdata.gauth.OAuth2Token(
+      client_id=flow.client_id,
+      client_secret=flow.client_secret,
+      scope=SCOPE,
+      user_agent=flow.user_agent,
+      access_token=credentials.access_token,
+      refresh_token=credentials.refresh_token)
 
   # Construct the Contacts service and authenticate
-  contacts_client = gdata.contacts.client.ContactsClient(domain=domain)
-  contacts_client.client_login(email=admin_email,
-                                password=admin_password,
-                                source='shared_contacts_profiles',
-                                account_type='HOSTED')
+  contacts_client = gdata.contacts.client.ContactsClient(domain=domain, auth_token=token)
+  token.authorize(contacts_client)
   contacts_manager = ContactsManager(contacts_client,domain)
 
   if clear:

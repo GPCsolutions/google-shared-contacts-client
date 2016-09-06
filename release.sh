@@ -6,7 +6,7 @@
 # Deletes any previous version of the directory and the archives beforehand.
 
 NAME='google-shared-contacts-client'
-FILES='COPYING outlook.csv README.md shared_contacts_profiles.py'
+FILES='COPYING outlook.csv requirements.txt README.md shared_contacts_profiles.py'
 
 # Go to the script directory.
 cd "$(readlink -f "$(dirname "$0")")"
